@@ -551,7 +551,11 @@ void FormatException(char* pszMessage, std::exception* pex, const char* pszThrea
     pszModule[0] = '\0';
     GetModuleFileNameA(NULL, pszModule, sizeof(pszModule));
 #else
-    const char* pszModule = "bitcoin";
+  #ifdef BITPENNY	
+    const char* pszModule = "bitpenny";
+  #else
+  	const char* pszModule = "bitcoin";
+  #endif  
 #endif
     if (pex)
         snprintf(pszMessage, 1000,
@@ -577,7 +581,11 @@ void PrintException(std::exception* pex, const char* pszThread)
     strMiscWarning = pszMessage;
 #ifdef GUI
     if (wxTheApp && !fDaemon)
-        MyMessageBox(pszMessage, "Bitcoin", wxOK | wxICON_ERROR);
+      #ifdef BITPENNY
+        MyMessageBox(pszMessage, "BitPenny", wxOK | wxICON_ERROR);
+      #else
+      	MyMessageBox(pszMessage, "Bitcoin", wxOK | wxICON_ERROR);
+      #endif  
 #endif
     throw;
 }
@@ -589,7 +597,11 @@ void ThreadOneMessageBox(string strMessage)
     if (fMessageBoxOpen)
         return;
     fMessageBoxOpen = true;
+   #ifdef BITPENNY
+    ThreadSafeMessageBox(strMessage, "BitPenny", wxOK | wxICON_EXCLAMATION);
+   #else
     ThreadSafeMessageBox(strMessage, "Bitcoin", wxOK | wxICON_EXCLAMATION);
+   #endif
     fMessageBoxOpen = false;
 }
 
@@ -651,6 +663,31 @@ string MyGetSpecialFolderPath(int nFolder, bool fCreate)
 
 string GetDefaultDataDir()
 {
+#ifdef BITPENNY
+    // Windows: C:\Documents and Settings\username\Application Data\BitPenny
+    // Mac: ~/Library/Application Support/BitPenny
+    // Unix: ~/.bitpenny
+#ifdef __WXMSW__
+    // Windows
+    return MyGetSpecialFolderPath(CSIDL_APPDATA, true) + "\\BitPenny";
+#else
+    char* pszHome = getenv("HOME");
+    if (pszHome == NULL || strlen(pszHome) == 0)
+        pszHome = (char*)"/";
+    string strHome = pszHome;
+    if (strHome[strHome.size()-1] != '/')
+        strHome += '/';
+#ifdef __WXMAC_OSX__
+    // Mac
+    strHome += "Library/Application Support/";
+    filesystem::create_directory(strHome.c_str());
+    return strHome + "BitPenny";
+#else
+    // Unix
+    return strHome + ".bitpenny";
+#endif
+#endif
+#else
     // Windows: C:\Documents and Settings\username\Application Data\Bitcoin
     // Mac: ~/Library/Application Support/Bitcoin
     // Unix: ~/.bitcoin
@@ -672,6 +709,7 @@ string GetDefaultDataDir()
 #else
     // Unix
     return strHome + ".bitcoin";
+#endif
 #endif
 #endif
 }
@@ -721,7 +759,11 @@ string GetDataDir()
 string GetConfigFile()
 {
     namespace fs = boost::filesystem;
-    fs::path pathConfig(GetArg("-conf", "bitcoin.conf"));
+#ifdef BITPENNY    
+    fs::path pathConfig(GetArg("-conf", "bitpenny.conf"));
+#else
+	fs::path pathConfig(GetArg("-conf", "bitcoin.conf"));
+#endif    
     if (!pathConfig.is_complete())
         pathConfig = fs::path(GetDataDir()) / pathConfig;
     return pathConfig.string();
@@ -753,7 +795,11 @@ void ReadConfigFile(map<string, string>& mapSettingsRet,
 string GetPidFile()
 {
     namespace fs = boost::filesystem;
-    fs::path pathConfig(GetArg("-pid", "bitcoind.pid"));
+#ifdef BITPENNY    
+    fs::path pathConfig(GetArg("-pid", "bitpennyd.pid"));
+#else
+	fs::path pathConfig(GetArg("-pid", "bitcoind.pid"));
+#endif    
     if (!pathConfig.is_complete())
         pathConfig = fs::path(GetDataDir()) / pathConfig;
     return pathConfig.string();
@@ -867,10 +913,17 @@ void AddTimeData(unsigned int ip, int64 nTime)
                 if (!fMatch)
                 {
                     fDone = true;
+                  #ifdef BITPENNY  
+                    string strMessage = _("Warning: Please check that your computer's date and time are correct.  If your clock is wrong BitPenny will not work properly.");
+                    strMiscWarning = strMessage;
+                    printf("*** %s\n", strMessage.c_str());
+                    boost::thread(boost::bind(ThreadSafeMessageBox, strMessage+" ", string("BitPenny"), wxOK | wxICON_EXCLAMATION, (wxWindow*)NULL, -1, -1));
+                  #else
                     string strMessage = _("Warning: Please check that your computer's date and time are correct.  If your clock is wrong Bitcoin will not work properly.");
                     strMiscWarning = strMessage;
                     printf("*** %s\n", strMessage.c_str());
                     boost::thread(boost::bind(ThreadSafeMessageBox, strMessage+" ", string("Bitcoin"), wxOK | wxICON_EXCLAMATION, (wxWindow*)NULL, -1, -1));
+                  #endif  
                 }
             }
         }

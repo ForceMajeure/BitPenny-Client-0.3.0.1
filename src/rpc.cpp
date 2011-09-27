@@ -28,6 +28,10 @@ typedef boost::asio::ssl::stream<boost::asio::ip::tcp::socket> SSLStream;
 // a certain size around 145MB.  If we need access to json_spirit outside this
 // file, we could use the compiled json_spirit option.
 
+#ifdef BITPENNY
+#include "bitpenny_client.h"
+#endif
+
 using namespace std;
 using namespace boost;
 using namespace boost::asio;
@@ -65,7 +69,11 @@ void PrintConsole(const char* format, ...)
     }
     printf("%s", buffer);
 #if defined(__WXMSW__) && defined(GUI)
+	#ifdef BITPENNY
+    MyMessageBox(buffer, "BitPenny", wxOK | wxICON_EXCLAMATION);
+    #else
     MyMessageBox(buffer, "Bitcoin", wxOK | wxICON_EXCLAMATION);
+    #endif
 #else
     fprintf(stdout, "%s", buffer);
 #endif
@@ -161,6 +169,16 @@ Value help(const Array& params, bool fHelp)
 
 Value stop(const Array& params, bool fHelp)
 {
+#ifdef BITPENNY
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "stop\n"
+            "Stop bitpenny server.");
+
+    // Shutdown will take long enough that the response should get back
+    CreateThread(Shutdown, NULL);
+    return "bitpenny server stopping";
+#else
     if (fHelp || params.size() != 0)
         throw runtime_error(
             "stop\n"
@@ -169,8 +187,8 @@ Value stop(const Array& params, bool fHelp)
     // Shutdown will take long enough that the response should get back
     CreateThread(Shutdown, NULL);
     return "bitcoin server stopping";
+#endif
 }
-
 
 Value getblockcount(const Array& params, bool fHelp)
 {
@@ -307,10 +325,14 @@ Value getinfo(const Array& params, bool fHelp)
     obj.push_back(Pair("blocks",        (int)nBestHeight));
     obj.push_back(Pair("connections",   (int)vNodes.size()));
     obj.push_back(Pair("proxy",         (fUseProxy ? addrProxy.ToStringIPPort() : string())));
+#ifndef BITPENNY
     obj.push_back(Pair("generate",      (bool)fGenerateBitcoins));
     obj.push_back(Pair("genproclimit",  (int)(fLimitProcessors ? nLimitProcessors : -1)));
+#endif
     obj.push_back(Pair("difficulty",    (double)GetDifficulty()));
+#ifndef BITPENNY
     obj.push_back(Pair("hashespersec",  gethashespersec(params, false)));
+#endif
     obj.push_back(Pair("testnet",       fTestNet));
     obj.push_back(Pair("keypoololdest", (boost::int64_t)pwalletMain->GetOldestKeyPoolTime()));
     obj.push_back(Pair("keypoolsize",   pwalletMain->GetKeyPoolSize()));
@@ -318,6 +340,9 @@ Value getinfo(const Array& params, bool fHelp)
     if (pwalletMain->IsCrypted())
         obj.push_back(Pair("unlocked_until", (boost::int64_t)nWalletUnlockTime));
     obj.push_back(Pair("errors",        GetWarnings("statusbar")));
+#ifdef BITPENNY
+	bitpennyinfo(obj);
+#endif
     return obj;
 }
 
@@ -1479,7 +1504,7 @@ Value validateaddress(const Array& params, bool fHelp)
     return ret;
 }
 
-
+#ifndef BITPENNY
 Value getwork(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() > 1)
@@ -1583,7 +1608,7 @@ Value getwork(const Array& params, bool fHelp)
         return CheckWork(pblock, *pwalletMain, reservekey);
     }
 }
-
+#endif
 
 
 
@@ -1606,8 +1631,10 @@ pair<string, rpcfn_type> pCallTable[] =
     make_pair("getblocknumber",         &getblocknumber),
     make_pair("getconnectioncount",     &getconnectioncount),
     make_pair("getdifficulty",          &getdifficulty),
+#ifndef BITPENNY
     make_pair("getgenerate",            &getgenerate),
     make_pair("setgenerate",            &setgenerate),
+#endif
     make_pair("gethashespersec",        &gethashespersec),
     make_pair("getinfo",                &getinfo),
     make_pair("getnewaddress",          &getnewaddress),
@@ -1643,6 +1670,14 @@ pair<string, rpcfn_type> pCallTable[] =
     make_pair("getwork",                &getwork),
     make_pair("listaccounts",           &listaccounts),
     make_pair("settxfee",               &settxfee),
+#ifdef BITPENNY
+    make_pair("getpool",               &getpool),
+    make_pair("setpool",               &setpool),
+    make_pair("getpooldisablesolo",    &getdisablesolo),
+    make_pair("setpooldisablesolo",    &setdisablesolo),
+    make_pair("setprintblocks",        &setprintblocks),
+    make_pair("setstatsinterval",      &setstatsinterval),
+#endif
 };
 map<string, rpcfn_type> mapCallTable(pCallTable, pCallTable + sizeof(pCallTable)/sizeof(pCallTable[0]));
 
@@ -1654,8 +1689,10 @@ string pAllowInSafeMode[] =
     "getblocknumber",
     "getconnectioncount",
     "getdifficulty",
+#ifndef BITPENNY
     "getgenerate",
     "setgenerate",
+#endif
     "gethashespersec",
     "getinfo",
     "getnewaddress",
@@ -1671,6 +1708,12 @@ string pAllowInSafeMode[] =
     "walletlock",
     "validateaddress",
     "getwork",
+#ifdef BITPENNY
+    "getpool",
+    "setpool",
+    "getpooldisablesolo",
+    "setpooldisablesolo",
+#endif
 };
 set<string> setAllowInSafeMode(pAllowInSafeMode, pAllowInSafeMode + sizeof(pAllowInSafeMode)/sizeof(pAllowInSafeMode[0]));
 
@@ -1745,6 +1788,10 @@ static string HTTPReply(int nStatus, const string& strMsg)
             "Content-Length: %d\r\n"
             "Content-Type: application/json\r\n"
             "Server: bitcoin-json-rpc/%s\r\n"
+#ifdef BITPENNY
+			"x-blocknum: %d\r\n"
+			"x-poolmode: %d\r\n"
+#endif
             "\r\n"
             "%s",
         nStatus,
@@ -1752,6 +1799,10 @@ static string HTTPReply(int nStatus, const string& strMsg)
         rfc1123Time().c_str(),
         strMsg.size(),
         FormatFullVersion().c_str(),
+#ifdef BITPENNY
+		nBestHeight,
+		((fDisableSoloMode || fMiningSolo)? 0 : 1),
+#endif
         strMsg.c_str());
 }
 
@@ -1999,7 +2050,11 @@ void ThreadRPCServer2(void* parg)
 
     if (mapArgs["-rpcuser"] == "" && mapArgs["-rpcpassword"] == "")
     {
-        string strWhatAmI = "To use bitcoind";
+#ifdef BITPENNY
+		string strWhatAmI = "To use bitpennyd";
+#else
+		string strWhatAmI = "To use bitcoind";
+#endif
         if (mapArgs.count("-server"))
             strWhatAmI = strprintf(_("To use the %s option"), "\"-server\"");
         else if (mapArgs.count("-daemon"))
@@ -2042,7 +2097,11 @@ void ThreadRPCServer2(void* parg)
     }
 #else
     if (fUseSSL)
+	#ifdef BITPENNY
+        throw runtime_error("-rpcssl=1, but bitpennyd compiled without full openssl libraries.");
+    #else
         throw runtime_error("-rpcssl=1, but bitcoin compiled without full openssl libraries.");
+    #endif
 #endif
 
     loop
@@ -2198,8 +2257,11 @@ Object CallRPC(const string& strMethod, const Array& params)
         throw runtime_error("couldn't connect to server");
 #else
     if (fUseSSL)
-        throw runtime_error("-rpcssl=1, but bitcoin compiled without full openssl libraries.");
-
+    #ifdef BITPENNY
+        throw runtime_error("-rpcssl=1, but bitpenny compiled without full openssl libraries.");
+	#else
+		throw runtime_error("-rpcssl=1, but bitcoin compiled without full openssl libraries.");
+	#endif
     ip::tcp::iostream stream(GetArg("-rpcconnect", "127.0.0.1"), GetArg("-rpcport", "8332"));
     if (stream.fail())
         throw runtime_error("couldn't connect to server");
@@ -2285,6 +2347,12 @@ int CommandLineRPC(int argc, char *argv[])
         //
         // Special case non-string parameter types
         //
+#ifdef BITPENNY
+        if (strMethod == "setpool"                && n > 0) ConvertTo<bool>(params[0]);
+        if (strMethod == "setpooldisablesolo"     && n > 0) ConvertTo<bool>(params[0]);
+        if (strMethod == "setprintblocks"         && n > 0) ConvertTo<bool>(params[0]);
+        if (strMethod == "setstatsinterval"       && n > 0) ConvertTo<boost::int64_t>(params[0]);
+#endif
         if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
         if (strMethod == "setgenerate"            && n > 1) ConvertTo<boost::int64_t>(params[1]);
         if (strMethod == "sendtoaddress"          && n > 1) ConvertTo<double>(params[1]);
@@ -2360,7 +2428,11 @@ int CommandLineRPC(int argc, char *argv[])
 #if defined(__WXMSW__) && defined(GUI)
         // Windows GUI apps can't print to command line,
         // so settle for a message box yuck
-        MyMessageBox(strPrint, "Bitcoin", wxOK);
+	#ifdef BITPENNY
+        MyMessageBox(strPrint, "Bitpenny", wxOK);
+    #else
+    	MyMessageBox(strPrint, "Bitcoin", wxOK);
+    #endif
 #else
         fprintf((nRet == 0 ? stdout : stderr), "%s\n", strPrint.c_str());
 #endif

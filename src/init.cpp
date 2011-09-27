@@ -12,6 +12,10 @@
 #include <boost/filesystem/fstream.hpp>
 #include <boost/interprocess/sync/file_lock.hpp>
 
+#ifdef BITPENNY
+bool BitpennyInit();
+#endif
+
 using namespace std;
 using namespace boost;
 
@@ -53,7 +57,11 @@ void Shutdown(void* parg)
         delete pwalletMain;
         CreateThread(ExitTimeout, NULL);
         Sleep(50);
-        printf("Bitcoin exiting\n\n");
+#ifdef BITPENNY
+        printf("Bitpenny exiting\n\n");
+#else
+		printf("Bitcoin exiting\n\n");
+#endif
         fExit = true;
         exit(0);
     }
@@ -160,6 +168,17 @@ bool AppInit2(int argc, char* argv[])
     if (mapArgs.count("-?") || mapArgs.count("--help"))
     {
         string strUsage = string() +
+#ifdef BITPENNY
+          _("Bitcoin version") + " " + FormatFullVersion() + "\n\n" +
+          _("Usage:") + "\t\t\t\t\t\t\t\t\t\t\n" +
+            "  bitpenny [options]                   \t  " + "\n" +
+            "  bitpenny [options] <command> [params]\t  " + _("Send command to -server or bitpennyd\n") +
+            "  bitpenny [options] help              \t\t  " + _("List commands\n") +
+            "  bitpenny [options] help <command>    \t\t  " + _("Get help for a command\n") +
+          _("Options:\n") +
+            "  -conf=<file>     \t\t  " + _("Specify configuration file (default: bitpenny.conf)\n") +
+            "  -pid=<file>      \t\t  " + _("Specify pid file (default: bitpennyd.pid)\n") +
+#else
           _("Bitcoin version") + " " + FormatFullVersion() + "\n\n" +
           _("Usage:") + "\t\t\t\t\t\t\t\t\t\t\n" +
             "  bitcoin [options]                   \t  " + "\n" +
@@ -171,6 +190,7 @@ bool AppInit2(int argc, char* argv[])
             "  -pid=<file>      \t\t  " + _("Specify pid file (default: bitcoind.pid)\n") +
             "  -gen             \t\t  " + _("Generate coins\n") +
             "  -gen=0           \t\t  " + _("Don't generate coins\n") +
+#endif
             "  -min             \t\t  " + _("Start minimized\n") +
             "  -datadir=<dir>   \t\t  " + _("Specify data directory\n") +
             "  -timeout=<n>     \t  "   + _("Specify connection timeout (in milliseconds)\n") +
@@ -216,7 +236,11 @@ bool AppInit2(int argc, char* argv[])
 
 #if defined(__WXMSW__) && defined(GUI)
         // Tabs make the columns line up in the message box
-        wxMessageBox(strUsage, "Bitcoin", wxOK);
+     #ifdef BITPENNY
+        wxMessageBox(strUsage, "BitPenny", wxOK);
+     #else
+     	wxMessageBox(strUsage, "Bitcoin", wxOK);
+     #endif
 #else
         // Remove tabs
         strUsage.erase(std::remove(strUsage.begin(), strUsage.end(), '\t'), strUsage.end());
@@ -261,6 +285,11 @@ bool AppInit2(int argc, char* argv[])
         int ret = CommandLineRPC(argc, argv);
         exit(ret);
     }
+
+#ifdef BITPENNY
+    if (!BitpennyInit())
+    	return false;
+#endif
 
 #ifndef __WXMSW__
     if (fDaemon)
@@ -309,7 +338,11 @@ bool AppInit2(int argc, char* argv[])
     //
 #if defined(__WXMSW__) && defined(GUI)
     // wxSingleInstanceChecker doesn't work on Linux
+   #ifdef BITPENNY
     wxString strMutexName = wxString("bitcoin_running.") + getenv("HOMEPATH");
+   #else
+    wxString strMutexName = wxString("bitpenny_running.") + getenv("HOMEPATH");
+   #endif
     for (int i = 0; i < strMutexName.size(); i++)
         if (!isalnum(strMutexName[i]))
             strMutexName[i] = '.';
@@ -321,7 +354,11 @@ bool AppInit2(int argc, char* argv[])
         loop
         {
             // Show the previous instance and exit
+          #ifdef BITPENNY
             HWND hwndPrev = FindWindowA("wxWindowClassNR", "Bitcoin");
+          #else
+            HWND hwndPrev = FindWindowA("wxWindowClassNR", "BitPenny");
+          #endif
             if (hwndPrev)
             {
                 if (IsIconic(hwndPrev))
@@ -350,7 +387,11 @@ bool AppInit2(int argc, char* argv[])
     static boost::interprocess::file_lock lock(strLockFile.c_str());
     if (!lock.try_lock())
     {
+      #ifdef BITPENNY
+        wxMessageBox(strprintf(_("Cannot obtain a lock on data directory %s.  BitPenny is probably already running."), GetDataDir().c_str()), "BitPenny");
+      #else
         wxMessageBox(strprintf(_("Cannot obtain a lock on data directory %s.  Bitcoin is probably already running."), GetDataDir().c_str()), "Bitcoin");
+      #endif
         return false;
     }
 
@@ -369,7 +410,11 @@ bool AppInit2(int argc, char* argv[])
     // Load data files
     //
     if (fDaemon)
-        fprintf(stdout, "bitcoin server starting\n");
+    #ifdef BITPENNY
+        fprintf(stdout, "bitpenny client starting\n");
+    #else
+    	fprintf(stdout, "bitcoin server starting\n");
+    #endif
     strErrors = "";
     int64 nStart;
 
@@ -432,7 +477,11 @@ bool AppInit2(int argc, char* argv[])
 
     if (!strErrors.empty())
     {
-        wxMessageBox(strErrors, "Bitcoin", wxOK | wxICON_ERROR);
+      #ifdef BITPENNY
+        wxMessageBox(strErrors, "BitPenny", wxOK | wxICON_ERROR);
+      #else
+      	wxMessageBox(strErrors, "Bitcoin", wxOK | wxICON_ERROR);
+      #endif
         return false;
     }
 
@@ -486,7 +535,11 @@ bool AppInit2(int argc, char* argv[])
         addrProxy = CAddress(mapArgs["-proxy"]);
         if (!addrProxy.IsValid())
         {
-            wxMessageBox(_("Invalid -proxy address"), "Bitcoin");
+          #ifdef BITPENNY
+            wxMessageBox(_("Invalid -proxy address"), "BitPenny");
+          #else
+          	wxMessageBox(_("Invalid -proxy address"), "Bitcoin");
+          #endif
             return false;
         }
     }
@@ -511,11 +564,19 @@ bool AppInit2(int argc, char* argv[])
     {
         if (!ParseMoney(mapArgs["-paytxfee"], nTransactionFee))
         {
-            wxMessageBox(_("Invalid amount for -paytxfee=<amount>"), "Bitcoin");
+          #ifdef BITPENNY
+            wxMessageBox(_("Invalid amount for -paytxfee=<amount>"), "BitPenny");
+          #else
+          	wxMessageBox(_("Invalid amount for -paytxfee=<amount>"), "Bitcoin");
+          #endif
             return false;
         }
         if (nTransactionFee > 0.25 * COIN)
+       	  #ifdef BITPENNY
+            wxMessageBox(_("Warning: -paytxfee is set very high.  This is the transaction fee you will pay if you send a transaction."), "BitPenny", wxOK | wxICON_EXCLAMATION);
+          #else
             wxMessageBox(_("Warning: -paytxfee is set very high.  This is the transaction fee you will pay if you send a transaction."), "Bitcoin", wxOK | wxICON_EXCLAMATION);
+          #endif
     }
 
     if (fHaveUPnP)
@@ -543,7 +604,11 @@ bool AppInit2(int argc, char* argv[])
     RandAddSeedPerfmon();
 
     if (!CreateThread(StartNode, NULL))
-        wxMessageBox("Error: CreateThread(StartNode) failed", "Bitcoin");
+      #ifdef BITPENNY
+        wxMessageBox("Error: CreateThread(StartNode) failed", "BitPenny");
+      #else
+      	wxMessageBox("Error: CreateThread(StartNode) failed", "Bitcoin");
+      #endif
 
     if (fServer)
         CreateThread(ThreadRPCServer, NULL);

@@ -65,7 +65,9 @@ int nConnectTimeout = 5000;
 CAddress addrProxy("127.0.0.1",9050);
 
 
-
+#ifdef BITPENNY
+#include "bitpenny_client.h"
+#endif
 
 unsigned short GetListenPort()
 {
@@ -1347,6 +1349,12 @@ void ThreadOpenConnections2(void* parg)
             Sleep(2000);
             if (fShutdown)
                 return;
+        
+        #ifdef BITPENNY
+            // monitor pool connection, start it only after all outbound connections are active
+            if (fBitpennyPoolMode)
+            	CheckPoolConnection();
+        #endif
         }
         vnThreadsRunning[1]++;
         if (fShutdown)
@@ -1522,6 +1530,9 @@ void ThreadMessageHandler2(void* parg)
                 return;
 
             // Send messages
+#ifdef BITPENNY
+            if (pnode != pnodeBitpennyHost)
+#endif
             TRY_CRITICAL_BLOCK(pnode->cs_vSend)
                 SendMessages(pnode, pnode == pnodeTrickle);
             if (fShutdown)
@@ -1613,7 +1624,11 @@ bool BindListenPort(string& strError)
     {
         int nErr = WSAGetLastError();
         if (nErr == WSAEADDRINUSE)
+          #ifdef BITPENNY
+            strError = strprintf(_("Unable to bind to port %d on this computer.  BitPenny is probably already running."), ntohs(sockaddr.sin_port));
+          #else
             strError = strprintf(_("Unable to bind to port %d on this computer.  Bitcoin is probably already running."), ntohs(sockaddr.sin_port));
+          #endif  
         else
             strError = strprintf("Error: Unable to bind to port %d on this computer (bind returned error %d)", ntohs(sockaddr.sin_port), nErr);
         printf("%s\n", strError.c_str());
@@ -1723,8 +1738,10 @@ void StartNode(void* parg)
     if (!CreateThread(ThreadMessageHandler, NULL))
         printf("Error: CreateThread(ThreadMessageHandler) failed\n");
 
+	#ifndef BITPENNY
     // Generate coins in the background
     GenerateBitcoins(fGenerateBitcoins, pwalletMain);
+    #endif
 }
 
 bool StopNode()

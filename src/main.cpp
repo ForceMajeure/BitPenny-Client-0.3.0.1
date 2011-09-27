@@ -63,7 +63,9 @@ int fUseUPnP = true;
 int fUseUPnP = false;
 #endif
 
-
+#ifdef BITPENNY
+#include "bitpenny_client.h"
+#endif
 
 
 
@@ -1326,7 +1328,11 @@ bool CBlock::AcceptBlock()
     return true;
 }
 
+#ifdef BITPENNY
+bool ProcessBlock(CNode* pfrom, CBlock* pblock)
+#else
 bool static ProcessBlock(CNode* pfrom, CBlock* pblock)
+#endif
 {
     // Check for duplicate
     uint256 hash = pblock->GetHash();
@@ -1754,9 +1760,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         return true;
     }
 
-
-
-
+#ifdef BITPENNY
+    if (pfrom == pnodeBitpennyHost && ProcessBitpennyMessage(pfrom, strCommand, vRecv))
+    	return true;
+#endif
 
     if (strCommand == "version")
     {
