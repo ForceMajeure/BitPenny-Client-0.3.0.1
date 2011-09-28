@@ -2209,6 +2209,11 @@ void ThreadRPCServer2(void* parg)
             {
                 // Execute
                 Value result;
+#ifdef BITPENNY
+                if (strMethod == "getwork")
+                	result = (*(*mi).second)(params, false);
+                else
+#endif
                 CRITICAL_BLOCK(cs_main)
                 CRITICAL_BLOCK(pwalletMain->cs_wallet)
                     result = (*(*mi).second)(params, false);

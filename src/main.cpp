@@ -1760,11 +1760,6 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         return true;
     }
 
-#ifdef BITPENNY
-    if (pfrom == pnodeBitpennyHost && ProcessBitpennyMessage(pfrom, strCommand, vRecv))
-    	return true;
-#endif
-
     if (strCommand == "version")
     {
         // Each connection can only send one version message
@@ -2341,7 +2336,13 @@ bool ProcessMessages(CNode* pfrom)
         bool fRet = false;
         try
         {
-            CRITICAL_BLOCK(cs_main)
+
+#ifdef BITPENNY
+        	if (pfrom == pnodeBitpennyHost)
+            	fRet = ProcessBitpennyMessage(pfrom, strCommand, vMsg);
+            if (!fRet)
+#endif
+        	CRITICAL_BLOCK(cs_main)
                 fRet = ProcessMessage(pfrom, strCommand, vMsg);
             if (fShutdown)
                 return true;

@@ -37,7 +37,7 @@ using namespace std;
 
 string FormatVersion(int nVersion);
 
-int nBitpennyClientVersion = 20500;
+int nBitpennyClientVersion = 20600;
 
 // bitpenny connection details
 bool fBitpennyPoolMode = false;
@@ -60,20 +60,20 @@ unsigned int nBitpennyPoolExtraNonceBase;
 int nCurrentBlockCandidate = 0;
 bool fNewPoolBlockIsAvailable = false;
 
-/*
-	IMPORTANT NOTE: as of version 0.4.0 getwork (as all other rpc commands) and ProcessMessage
-					are running under CRITICAL_BLOCK(cs_main) thus as soon as rpc is single threaded the following critical sections are no longer required:
-					cs_lBlockCandidates, cs_ServerStats
-
-*/
+struct BlockCandidate
+{
+	CBlock  		block;
+	unsigned int    nBlockId;
+	int				nBlockNumber;
+};
 
 list<BlockCandidate> lBlockCandidates;
 set<unsigned int> setBlockCandidates;
-// CCriticalSection cs_lBlockCandidates;
+CCriticalSection cs_lBlockCandidates;
 
 CServerStats ServerStats;
 CClientStats ClientStats;
-// CCriticalSection cs_ServerStats;
+CCriticalSection cs_ServerStats;
 
 // stats
 static int64	nStartTime;
@@ -401,8 +401,8 @@ void bitpennyinfo(Object& obj)
 	obj.push_back(Pair("pooltarget",     			hashBitpennyPoolTarget.GetHex()));
 	obj.push_back(Pair("poolsharevalue", 			ValueFromAmount(nMinerBounty)));
 
-//	CRITICAL_BLOCK(cs_ServerStats)
-//	{
+	CRITICAL_BLOCK(cs_ServerStats)
+	{
 		obj.push_back(Pair("poolstatstime",			LocalDateTimeStrFormat("%x %H:%M:%S", ServerStats.nTime)));
 		obj.push_back(Pair("poolhashrates",			ServerStats.HashRatesToStr()));
 		obj.push_back(Pair("poolcounts",			ServerStats.CountsToStr()));
@@ -415,7 +415,7 @@ void bitpennyinfo(Object& obj)
 		obj.push_back(Pair("clientstatstime",		LocalDateTimeStrFormat("%x %H:%M:%S", ClientStats.nTime)));
 		obj.push_back(Pair("clienthashrates",		ClientStats.HashRatesToStr()));
 		obj.push_back(Pair("clientcounts",			ClientStats.CountsToStr()));
-//	}
+	}
 
 	obj.push_back(Pair("myaddress",       			strPoolUserId));
 
@@ -442,7 +442,7 @@ Object JSONRPCError(int code, const string& message); // defined in rpc.cpp
 bool ProcessBlock(CNode* pfrom, CBlock* pblock);      // defined in main.cpp
 
 
-bool MinerCheckWork(uint256& hash, CBlock* pblock, CWallet& wallet, bool fPool)
+bool MinerCheckWork(uint256& hash, CBlock* pblock, CWallet& wallet)
 {
     uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
 
@@ -469,32 +469,12 @@ bool MinerCheckWork(uint256& hash, CBlock* pblock, CWallet& wallet, bool fPool)
             wallet.mapRequestCount[pblock->GetHash()] = 0;
 
         // Process this block the same as if we had received it from another node
-        if (!ProcessBlock((fPool? pnodeBitpennyHost:NULL), pblock))
+        if (!ProcessBlock(NULL, pblock))
             return error("BitcoinMiner : ProcessBlock, block not accepted");
     }
 
     return true;
 }
-
-static void MinerIncrementExtraNonce(CBlock* pblock, unsigned int& nExtraNonce, bool fPool)
-{
-    // Update nExtraNonce
-    static uint256 hashPrevBlock;
-    if (hashPrevBlock != pblock->hashPrevBlock)
-    {
-        nExtraNonce = 0;
-        hashPrevBlock = pblock->hashPrevBlock;
-    }
-
-    ++nExtraNonce;
-
-    pblock->vtx[0].vin[0].scriptSig = CScript() << pblock->nBits << CBigNum(nExtraNonce);  // DO NOT CHANGE!
-    if (fPool)
-    	pblock->vtx[0].vin[0].scriptSig << CBigNum(nBitpennyPoolExtraNonceBase);
-
-    pblock->hashMerkleRoot = pblock->BuildMerkleTree();
-}
-
 
 struct WorkItem
 {
@@ -511,7 +491,7 @@ struct WorkItem
 	WorkItem(CBlock* p)
 	{
 		pblock = p;
-		nBlockId = 0;
+		nBlockId = p->nTime;
 		fPool = false;
 	}
 
@@ -528,6 +508,25 @@ struct WorkItem
 			delete(pblock);
 	}
 };
+
+static void MinerIncrementExtraNonce(CBlock* pblock, unsigned int& nExtraNonce, WorkItem *pwi)
+{
+    // Update nExtraNonce
+    static uint256 hashPrevBlock;
+    if (hashPrevBlock != pblock->hashPrevBlock)
+    {
+        nExtraNonce = 0;
+        hashPrevBlock = pblock->hashPrevBlock;
+    }
+
+    ++nExtraNonce;
+
+    pblock->vtx[0].vin[0].scriptSig = CScript() << pwi->nBlockId << CBigNum(nExtraNonce);  // DO NOT CHANGE!
+    if (pwi->fPool)
+    	pblock->vtx[0].vin[0].scriptSig << CBigNum(nBitpennyPoolExtraNonceBase);
+
+    pblock->hashMerkleRoot = pblock->BuildMerkleTree();
+}
 
 
 Value getwork(const Array& params, bool fHelp)
@@ -575,8 +574,8 @@ Value getwork(const Array& params, bool fHelp)
 
 		if (fBitpennyPoolMode)
 		{
-	        //CRITICAL_BLOCK(cs_lBlockCandidates)
-			//{
+	        CRITICAL_BLOCK(cs_lBlockCandidates)
+			{
 	        	bool fConnected = IsConnectedToBitpenny();
 
 	        	if (nCurrentBlockCandidate > 0 && (!fConnected || nCurrentBlockCandidate < nBestHeight))
@@ -591,7 +590,7 @@ Value getwork(const Array& params, bool fHelp)
 	        	}
 
 	        	// check if we need a new pool block
-	        	if (fConnected && nCurrentBlockCandidate == nBestHeight && (pPoolWorkItem == NULL || fNewPoolBlockIsAvailable))
+	        	if (fConnected && nCurrentBlockCandidate >= nBestHeight && (pPoolWorkItem == NULL || fNewPoolBlockIsAvailable))
 	        	{
 	        		// do we have a suitable block?
 	        		if (!lBlockCandidates.empty())
@@ -604,8 +603,10 @@ Value getwork(const Array& params, bool fHelp)
 	        			fNewPoolBlockIsAvailable = false;
 	        			// MinerLog("picking up new pool block\n");
 	        		}
+	        		else
+	        			pPoolWorkItem = NULL;
 	        	}
-			//}
+			}
 		}
 		else
 		{
@@ -682,7 +683,7 @@ Value getwork(const Array& params, bool fHelp)
 
 		// Update nExtraNonce
 		static unsigned int nExtraNonce = 0;
-		MinerIncrementExtraNonce(pblock, nExtraNonce, pwi->fPool);
+		MinerIncrementExtraNonce(pblock, nExtraNonce, pwi);
 
 		// save
 		mapNewBlock[pblock->hashMerkleRoot] = make_pair(pwi, nExtraNonce);
@@ -737,7 +738,7 @@ Value getwork(const Array& params, bool fHelp)
         if (pwi != NULL && pwi->fPool)
         {
         	// check if work item is still alive
-        	// CRITICAL_BLOCK(cs_lBlockCandidates)
+        	CRITICAL_BLOCK(cs_lBlockCandidates)
         		if (!setBlockCandidates.count(pwi->nBlockId))
         			pwi = NULL;
         }
@@ -752,7 +753,7 @@ Value getwork(const Array& params, bool fHelp)
 
 		pblock->nTime = pdata->nTime;
 		pblock->nNonce = pdata->nNonce;
-		pblock->vtx[0].vin[0].scriptSig = CScript() << pblock->nBits << CBigNum(nExtraNonce);
+		pblock->vtx[0].vin[0].scriptSig = CScript() << pwi->nBlockId << CBigNum(nExtraNonce);
 		if (pwi->fPool)
 			pblock->vtx[0].vin[0].scriptSig << CBigNum(nBitpennyPoolExtraNonceBase);
 		pblock->hashMerkleRoot = pblock->BuildMerkleTree();
@@ -785,7 +786,7 @@ Value getwork(const Array& params, bool fHelp)
 			}
 		}
 
-		if (MinerCheckWork(hash, pblock, *pwalletMain, pwi->fPool))
+		if (MinerCheckWork(hash, pblock, *pwalletMain))
 		{
 			MinerLog("Generated %s block %d\n", (pwi->fPool? "pool" : "solo"), nBestHeight);
 		}
@@ -800,7 +801,6 @@ Value getwork(const Array& params, bool fHelp)
 // main.cpp
 ////////////////////////////////////////
 
-// runs under cs_main
 bool ProcessBitpennyMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 {
 	if (pfrom->nVersion == 0)
@@ -820,49 +820,47 @@ bool ProcessBitpennyMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 	}
 	else if (strCommand == "bp:pushwork")
 	{
-		int nBlockNumber;
 		BlockCandidate bc;
 
-		vRecv >> nBlockNumber >> bc.nBlockId >> bc.block >> nMinerBounty;
+		vRecv >> bc.nBlockNumber >> bc.nBlockId >> bc.block >> nMinerBounty;
 
-		//CRITICAL_BLOCK(cs_lBlockCandidates)
-		//{
-			if (nCurrentBlockCandidate < nBestHeight)
+		CRITICAL_BLOCK(cs_lBlockCandidates)
+		{
+			if (bc.nBlockNumber > nCurrentBlockCandidate)
 			{
 				lBlockCandidates.clear();
 				setBlockCandidates.clear();
-
 				nCurrentBlockCandidate = 0;
 				fNewPoolBlockIsAvailable = false;
 			}
 
-			if (nBlockNumber < nBestHeight)
-				printf("Stale block %d from Bitpenny\n", nBlockNumber);
-			else
+			if (bc.nBlockNumber >= nBestHeight)
 			{
 				lBlockCandidates.push_back(bc);
 				setBlockCandidates.insert(bc.nBlockId);
-				nCurrentBlockCandidate = nBlockNumber;
+				nCurrentBlockCandidate = bc.nBlockNumber;
 				fNewPoolBlockIsAvailable = true;
+
+				int64 nMyValueOut = 0;
+				int64 nBlockValueOut = 0;
+				BOOST_FOREACH(const CTxOut& txout, bc.block.vtx[0].vout)
+				{
+					nBlockValueOut += txout.nValue;
+					if (txout.scriptPubKey == scriptMyPubKey)
+						nMyValueOut = txout.nValue;
+				}
+
+				nMyShareInCurrentBlock = nMyValueOut;
+
+				MinerLog("block candidate %d id=%u with %d transactions. Coinbase value %s. My share is %s BTC.\n",
+						bc.nBlockNumber, bc.nBlockId, bc.block.vtx.size(), FormatMoney(nBlockValueOut, false).c_str(), FormatMoney(nMyValueOut, false).c_str());
+
+				if (fPrintBlocks)
+					bc.block.print();
 			}
-
-		    int64 nMyValueOut = 0;
-		    int64 nBlockValueOut = 0;
-		    BOOST_FOREACH(const CTxOut& txout, bc.block.vtx[0].vout)
-		    {
-		    	nBlockValueOut += txout.nValue;
-		    	if (txout.scriptPubKey == scriptMyPubKey)
-		    		nMyValueOut = txout.nValue;
-		    }
-
-		    nMyShareInCurrentBlock = nMyValueOut;
-
-			MinerLog("block candidate %d id=%u with %d transactions. Coinbase value %s. My share is %s BTC.\n",
-					nBlockNumber, bc.nBlockId, bc.block.vtx.size(), FormatMoney(nBlockValueOut, false).c_str(), FormatMoney(nMyValueOut, false).c_str());
-
-			if (fPrintBlocks)
-				bc.block.print();
-		//}
+			else
+				printf("Stale block %d from Bitpenny\n", bc.nBlockNumber);
+		}
 
 	}
 	else if (strCommand == "bp:rejected")
@@ -880,19 +878,19 @@ bool ProcessBitpennyMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 	}
 	else if (strCommand == "bp:s_stats")
 	{
-		//CRITICAL_BLOCK(cs_ServerStats)
-		//{
+		CRITICAL_BLOCK(cs_ServerStats)
+		{
 			vRecv >> ServerStats;
 			MinerLog("s_stats: %s\n", ServerStats.ToStr().c_str());
-		//}
+		}
 	}
 	else if (strCommand == "bp:c_stats")
 	{
-		//CRITICAL_BLOCK(cs_ServerStats)
-		//{
+		CRITICAL_BLOCK(cs_ServerStats)
+		{
 			vRecv >> ClientStats;
 			MinerLog("c_stats: %s\n", ClientStats.ToStr().c_str());
-		//}
+		}
 	}
 	else if (strCommand == "bp:message")
 	{

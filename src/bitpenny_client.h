@@ -67,10 +67,4 @@ Value setprintblocks(const Array& params, bool fHelp);
 
 bool ProcessBitpennyMessage(CNode* pfrom, string strCommand, CDataStream& vRecv);
 
-struct BlockCandidate
-{
-	CBlock  block;
-	unsigned int   nBlockId;
-};
-
 #endif

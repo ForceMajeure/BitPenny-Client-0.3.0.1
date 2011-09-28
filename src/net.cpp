@@ -1533,9 +1533,6 @@ void ThreadMessageHandler2(void* parg)
                 return;
 
             // Send messages
-#ifdef BITPENNY
-            if (pnode != pnodeBitpennyHost)
-#endif
             TRY_CRITICAL_BLOCK(pnode->cs_vSend)
                 SendMessages(pnode, pnode == pnodeTrickle);
             if (fShutdown)
