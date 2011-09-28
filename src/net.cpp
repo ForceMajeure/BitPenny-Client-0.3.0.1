@@ -1039,8 +1039,11 @@ void ThreadSocketHandler2(void* parg)
             BOOST_FOREACH(CNode* pnode, vNodesCopy)
                 pnode->Release();
         }
-
+#ifdef BITPENNY
+        Sleep(5);
+#else
         Sleep(10);
+#endif
     }
 }
 
@@ -1549,7 +1552,11 @@ void ThreadMessageHandler2(void* parg)
         // Reduce vnThreadsRunning so StopNode has permission to exit while
         // we're sleeping, but we must always check fShutdown after doing this.
         vnThreadsRunning[2]--;
+#ifdef BITPENNY
+        Sleep(10);
+#else
         Sleep(100);
+#endif
         if (fRequestShutdown)
             Shutdown(NULL);
         vnThreadsRunning[2]++;
