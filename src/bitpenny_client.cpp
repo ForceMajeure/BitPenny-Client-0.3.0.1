@@ -1,5 +1,5 @@
 /*
-	Bitpenny Client 0.2.5 BETA
+	Bitpenny Client
 
 	Copyright (c) 2011 ForceMajeure & OneFixt (www.BitPenny.com)
 
