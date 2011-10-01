@@ -177,7 +177,7 @@ Value stop(const Array& params, bool fHelp)
 
     // Shutdown will take long enough that the response should get back
     CreateThread(Shutdown, NULL);
-    return "bitpenny server stopping";
+    return "bitpenny client stopping";
 #else
     if (fHelp || params.size() != 0)
         throw runtime_error(

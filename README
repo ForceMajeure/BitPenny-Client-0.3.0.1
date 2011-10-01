@@ -1,30 +1,63 @@
 
-Bitcoin integration/staging tree
+Official BitPenny Client Source Code (www.BitPenny.com)
+based on Bitcoin 0.4.0 codebase
 
-Development process
+
+Purpose
 ===================
 
-Developers work in their own trees, then submit pull requests when
-they think their feature or bug fix is ready.
+This source code is released with the intention of allowing community members
+to inspect and customize the BitPenny Client in order to improve security and
+prevent the possibility of >50% mining power attacks by the server.  
+Developers are free to make changes to the code, submit pull requests, and 
+develop alternate clients.  The BitPenny Client is meant to be used together 
+with the BitPenny mining pool server, which is not open source.  By using this
+software, you agree to do so in good faith and to not deliberately harm the
+BitPenny server. 
 
-If it is a simple/trivial/non-controversial change, then one of the
-bitcoin development team members simply pulls it.
 
-If it is a more complicated or potentially controversial
-change, then the patch submitter will be asked to start a
-discussion (if they haven't already) on the mailing list:
-http://sourceforge.net/mailarchive/forum.php?forum_name=bitcoin-development
+How To Build
+===================
+git clone git://github.com/ForceMajeure/BitPenny-Client.git
+cd BitPenny-Client/src
+make -f makefile.bitpenny.unix bitpennyd
 
-The patch will be accepted if there is broad consensus that it is a
-good thing.  Developers should expect to rework and resubmit patches
-if they don't match the project's coding conventions (see coding.txt)
-or are controversial.
+For dependencies, see doc/build-unix.txt
 
-The master branch is regularly built and tested, but is not guaranteed
-to be completely stable. Tags are regularly created to indicate new
-official, stable release versions of Bitcoin. If you would like to
-help test the Bitcoin core, please contact QA@BitcoinTesting.org.
 
-Feature branches are created when there are major new features being
-worked on by several people.
+Sample Config File (.bitpenny/bitpenny.conf)
+===================
+
+# standard bitcoind options
+rpcuser=
+rpcpassword=
+rpcport=
+rpcallowip=
+
+# BitPenny options
+
+# set 1 for pooled mining and 0 for solo mining
+# can be changed with "setpool true|false" rpc command
+pool=1
+poolhost=bitpenny.dyndns.biz
+poolport=8338
+
+# pooluserid must be a valid Bitcoin address
+# this address is used for both pooled and solo mining
+# nothing is stored in the local wallet.dat
+# it is NOT advised to use the bitpennyd client as a wallet
+
+pooluserid=
+
+# time interval in milliseconds to calculate shares per second
+# can be changed via "setpoolinterval" rpc command
+statsinterval=60000
+
+# bitpennyd automatically defaults to solo mining mode whenever the server is unavailable
+# set the following parameter to 1 if you'd rather receive an HTTP 500 error instead of switching to solo mode
+# get/setpooldisablesolo rpc commands are also available
+# please note that bitpennyd provides an x-poolmode HTTP header to indicate the type of work returned
+# the header value is set to 1 when pool work is returned, and 0 when solo work is returned
+# this can be used by miners and proxies for further processing
+pooldisablesolo=0
 

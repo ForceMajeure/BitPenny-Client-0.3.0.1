@@ -37,7 +37,7 @@ using namespace std;
 
 string FormatVersion(int nVersion);
 
-int nBitpennyClientVersion = 20600;
+int nBitpennyClientVersion = 30000;
 
 // bitpenny connection details
 bool fBitpennyPoolMode = false;
@@ -442,10 +442,8 @@ Object JSONRPCError(int code, const string& message); // defined in rpc.cpp
 bool ProcessBlock(CNode* pfrom, CBlock* pblock);      // defined in main.cpp
 
 
-bool MinerCheckWork(uint256& hash, CBlock* pblock, CWallet& wallet)
+bool MinerCheckWork(uint256& hash, uint256& hashTarget, CBlock* pblock, CWallet& wallet)
 {
-    uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
-
     if (fDebug)	printf("MinerCheckWork: \n  hash: %s  \ntarget: %s\n", hash.GetHex().c_str(), hashTarget.GetHex().c_str());
 
     if (hash > hashTarget)
@@ -628,7 +626,7 @@ Value getwork(const Array& params, bool fHelp)
 				throw JSONRPCError(-7, "Out of memory");
 
 			// substitute an address
-			// nothing should go to a local wallet. MerkleTree will be rebiult by MinerIncrementExtraNonce
+			// nothing should go to a local wallet. MerkleTree will be rebuilt by MinerIncrementExtraNonce
 			pblock->vtx[0].vout[0].scriptPubKey = scriptMyPubKey;
 			if (fPrintBlocks)
 				pblock->print();
@@ -766,6 +764,24 @@ Value getwork(const Array& params, bool fHelp)
 			return false;
 		}
 
+		uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
+
+	    if (fDebug)	printf("MinerCheckWork: \n  hash: %s  \ntarget: %s\n", hash.GetHex().c_str(), hashTarget.GetHex().c_str());
+
+	    if (hash <= hashTarget)
+	    {
+			if (MinerCheckWork(hash, hashTarget, pblock, *pwalletMain))
+			{
+				MinerLog("Generated %s block %d\n", (pwi->fPool? "pool" : "solo"), nBestHeight);
+			}
+			else
+			{
+				// block was not accepted
+				// do not submit it to the server to prevent forks, double-spending and other >50% network power attacks
+				return false;
+			}
+	    }
+
 		bool rc = true;
 
 		if (pwi->fPool)
@@ -786,11 +802,6 @@ Value getwork(const Array& params, bool fHelp)
 			}
 		}
 
-		if (MinerCheckWork(hash, pblock, *pwalletMain))
-		{
-			MinerLog("Generated %s block %d\n", (pwi->fPool? "pool" : "solo"), nBestHeight);
-		}
-
 		return rc;
     }
 }
@@ -807,6 +818,11 @@ bool ProcessBitpennyMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
     {
         // Must have a version message before anything else
         return false;
+    }
+
+    if (fDebug && strCommand.substr(0,3) == "bp:") {
+        printf("%s ", DateTimeStrFormat("%x %H:%M:%S", GetTime()).c_str());
+        printf("received: %s (%d bytes)\n", strCommand.c_str(), vRecv.size());
     }
 
 	if (strCommand == "bp:accepted")
