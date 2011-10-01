@@ -17,10 +17,10 @@ BitPenny server.
 
 How To Build
 ===================
- git clone git://github.com/ForceMajeure/BitPenny-Client.git
- cd BitPenny-Client/src
- make -f makefile.bitpenny.unix bitpennyd
+	git clone git://github.com/ForceMajeure/BitPenny-Client.git
+	cd BitPenny-Client/src
+	make -f makefile.bitpenny.unix bitpennyd
  
- edit and place bitpenny.conf into the .bitpenny/ directory
+	edit and place bitpenny.conf into the .bitpenny/ directory
 
- For dependencies, see doc/build-unix.txt
+	For dependencies, see doc/build-unix.txt
