@@ -110,6 +110,69 @@ inline bool IsConnectedToBitpenny()
 ///////////////////////////////////////
 // instead of util.cpp
 ///////////////////////////////////////
+#ifdef __WXMSW__
+string LocalDateTimeStrFormat(const char* pszFormat, int64 nTime)
+{
+    time_t n = nTime;
+    struct tm *tmTime ;
+
+    tmTime = localtime(&n);
+
+    char pszTime[200];
+    strftime(pszTime, sizeof(pszTime), pszFormat, tmTime);
+    return pszTime;
+}
+
+string ElapsedTime(int64 nTime)
+{
+    time_t n = nTime;
+    struct tm *tmTime;
+    tmTime = gmtime(&n);
+    return tmTime->tm_yday>1?
+    		strprintf("%d:%02d:%02d:%02d", tmTime->tm_yday-1, tmTime->tm_hour, tmTime->tm_min, tmTime->tm_sec) :
+    		strprintf("%02d:%02d:%02d", tmTime->tm_hour, tmTime->tm_min, tmTime->tm_sec);
+}
+
+
+void MinerLog(const char* pszFormat, ...)
+{
+	int ret = 0;
+	static FILE* fileout = NULL;
+	static int nDayOpened = 0;
+    	struct tm *tmTime ;
+
+	time_t nTime = GetTime();
+
+    	tmTime = localtime(&nTime);
+
+	if (!fileout || nDayOpened != tmTime->tm_yday)
+	{
+		if(fileout) fclose(fileout);
+
+	    char pszTime[200];
+	    strftime(pszTime, sizeof(pszTime), "%Y%m%d", tmTime);
+	    char pszFile[MAX_PATH+100];
+		GetDataDir(pszFile);
+
+		strlcat(pszFile, "/miner-", sizeof(pszFile));
+		strlcat(pszFile, pszTime, sizeof(pszFile));
+		strlcat(pszFile, ".log", sizeof(pszFile));
+		fileout = fopen(pszFile, "a");
+		if (fileout) setbuf(fileout, NULL); // unbuffered
+		nDayOpened = tmTime->tm_yday;
+	}
+
+	if (fileout)
+	{
+		//// Debug print useful for profiling
+		fprintf(fileout, "%"PRI64d": ", GetTime());
+		va_list arg_ptr;
+		va_start(arg_ptr, pszFormat);
+		ret = vfprintf(fileout, pszFormat, arg_ptr);
+		va_end(arg_ptr);
+	}
+}
+#else
 string LocalDateTimeStrFormat(const char* pszFormat, int64 nTime)
 {
     time_t n = nTime;
@@ -171,7 +234,7 @@ void MinerLog(const char* pszFormat, ...)
 		va_end(arg_ptr);
 	}
 }
-
+#endif
 
 ////////////////////////////////////////
 // for init.cpp
