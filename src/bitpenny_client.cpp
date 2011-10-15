@@ -37,7 +37,7 @@ using namespace std;
 
 string FormatVersion(int nVersion);
 
-int nBitpennyClientVersion = 30000;
+int nBitpennyClientVersion = 30001;
 
 // bitpenny connection details
 bool fBitpennyPoolMode = false;
@@ -321,7 +321,7 @@ bool ConnectToPool()
 	else
 	{
 		MinerLog("Could not initiate connection to a pool. Please check poolhost and poolport in config file\n");
-		fBitpennyPoolMode = false;
+		// fBitpennyPoolMode = false;
 	}
 
     return false;
@@ -491,6 +491,10 @@ void bitpennyinfo(Object& obj)
 	obj.push_back(Pair("sessionsharessubmitted", 	(int)nSubmittedForVerification));
 	obj.push_back(Pair("sessionsharesverified", 	(int)nHashesVerified));
 	obj.push_back(Pair("sessionsharesrejected", 	(int)nHashesRejected));
+
+	double dStaleShares = nHashesReceived>0? 100.0 * nHashesRejected / nHashesReceived : 0.0;
+
+	obj.push_back(Pair("sessionstaleshares(%)", 	(double)dStaleShares));
 	obj.push_back(Pair("sessioncredit",  			ValueFromAmount(nSessionCredit)));
 
 	obj.push_back(Pair("projectedblockcredit",     	ValueFromAmount(nMyShareInCurrentBlock)));
@@ -841,7 +845,8 @@ Value getwork(const Array& params, bool fHelp)
 			{
 				// block was not accepted
 				// do not submit it to the server to prevent forks, double-spending and other >50% network power attacks
-				return false;
+				// uncomment line below only if bool gets close to 50%
+				// return false;
 			}
 	    }
 
